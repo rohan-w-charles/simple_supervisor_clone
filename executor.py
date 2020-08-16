@@ -3,10 +3,13 @@ import argparse
 import os
 import ast
 import errno
+import time
 import select
+from message import get_message
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--file', '-f', help='File name')
+parser.add_argument('--file', '-f', required=True, help='File name')
+parser.add_argument('--pid', '-p', required=False, help='File name')
 args = parser.parse_args()
 
 
@@ -24,42 +27,56 @@ def run_process(file_name, log_name):
                             stdout=open(f'{log_name}.txt', 'a'))
 
 
-"""
--- Old Version of reading from fifo
-
-def read_fifo(FIFO):
-    with open(FIFO) as fifo:
-        while True:
-            data = fifo.read()
-            return data
-"""
-
-
-def strip_values(val):
-    return "".join([i for
-                    i in ss if (i in ["{", "}", ":", '"', "'"]
-                                or i.isalpha())])
-
-
 def read_fifo(FIFO_PATH):
-    with open(FIFO_PATH) as fifo:
-        while True:
-            select.select([fifo], [], [fifo])
-            data = fifo.read()
-            return data
+    fifo = open(FIFO_PATH)
+    while True:
+        select.select([fifo], [], [fifo])
+        data = fifo.read()
+        return data
+
+
+def reader(IPC_FIFO_NAME, start_time):
+    fifo = os.open(IPC_FIFO_NAME, os.O_RDONLY | os.O_NONBLOCK)
+    while True and (start_time + 3 > time.time()):
+        try:
+            msg = get_message(fifo)
+            return msg
+        except Exception as e:
+            if e != "unpack requires a buffer of 4 bytes":
+                assert True, "Error in reading message"
+    return None
+
+
+def ipc_interface(IPC_FIFO_NAME):
+    try:
+        os.mkfifo(IPC_FIFO_NAME)
+        time.sleep(1)
+    except OSError as oe:
+        if oe.errno == errno.EEXIST:
+            pass
+        else:
+            assert False, f"Error {os.errno}"
+    output = reader(IPC_FIFO_NAME, time.time())
+    if output is None:
+        return None
+    json_values = ast.literal_eval(output)
+    os.remove(IPC_FIFO_NAME)
+    return json_values
 
 
 if __name__ == "__main__":
     IPC_FIFO_NAME = "TEST"
-    try:
-        os.mkfifo(IPC_FIFO_NAME)
-    except OSError as oe:
-        if oe.errno != errno.EEXIST:
-            print("PIPE ALREADY EXISTS .....!!")
-
     process = run_process(args.file, args.file)
-    ss = read_fifo(IPC_FIFO_NAME)
-    ss = strip_values(ss)
-    json_values = ast.literal_eval(ss)
-    print(json_values["Hey"])
+    process_id = process.pid
+    flag = is_processrunning(args.file, process_id)
+    while flag:
+        output = ipc_interface(IPC_FIFO_NAME)
+        if output is not None:
+            print(output)
+        flag = is_processrunning(args.file, process_id)
+        print("Is process running ::", flag)
+        print("Process Id ::", process_id)
+    output = ipc_interface(IPC_FIFO_NAME)
+    while output is not None:
+        print("Outside--->", output)
     os.remove(IPC_FIFO_NAME)
