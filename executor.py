@@ -13,14 +13,8 @@ parser.add_argument('--pid', '-p', required=False, help='File name')
 args = parser.parse_args()
 
 
-def is_processrunning(file_name, pid):
-    cmd = [f'pgrep -f .*python3.*{file_name}']
-    process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE,
-                               stderr=subprocess.PIPE)
-    my_pid, err = process.communicate()
-    running_pids = list(map(int, my_pid.splitlines()))
-    return pid in running_pids
-
+def is_processrunning(pid):
+    return True if pid.poll() is None else False
 
 def run_process(file_name, log_name):
     return subprocess.Popen(['python3', file_name],
@@ -65,18 +59,22 @@ def ipc_interface(IPC_FIFO_NAME):
 
 
 if __name__ == "__main__":
+    """
+    Asyc process
+    Sub process messages
+    """
     IPC_FIFO_NAME = "TEST"
     process = run_process(args.file, args.file)
-    process_id = process.pid
-    flag = is_processrunning(args.file, process_id)
+    flag = is_processrunning(process)
     while flag:
         output = ipc_interface(IPC_FIFO_NAME)
         if output is not None:
             print(output)
-        flag = is_processrunning(args.file, process_id)
+        flag = is_processrunning(process)
         print("Is process running ::", flag)
-        print("Process Id ::", process_id)
+        print("Process Id ::", process.pid)
     output = ipc_interface(IPC_FIFO_NAME)
+    poll = process.poll()
     while output is not None:
         print("Outside--->", output)
     os.remove(IPC_FIFO_NAME)
