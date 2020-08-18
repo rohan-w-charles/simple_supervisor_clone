@@ -17,9 +17,10 @@ args = parser.parse_args()
 async def async_is_processrunning(process):
     return True if process.poll() is None else False
 
-
+"""
 def is_processrunning(process):
     return True if process.poll() is None else False
+"""
 
 
 def run_process(file_name, log_name):
@@ -35,6 +36,20 @@ def read_fifo(FIFO_PATH):
         return data
 
 
+async def reader_for_async(process, IPC_FIFO_NAME):
+    fifo = os.open(IPC_FIFO_NAME, os.O_RDONLY | os.O_NONBLOCK)
+    run_flag = True
+    while True and run_flag:
+        try:
+            msg = get_message(fifo)
+            return msg
+        except Exception as e:
+            if e != "unpack requires a buffer of 4 bytes":
+                assert True, "Error in reading message"
+        run_flag = await async_is_processrunning(process)
+    return None
+
+
 def reader(IPC_FIFO_NAME, start_time):
     fifo = os.open(IPC_FIFO_NAME, os.O_RDONLY | os.O_NONBLOCK)
     while True and (start_time + 3 > time.time()):
@@ -47,7 +62,7 @@ def reader(IPC_FIFO_NAME, start_time):
     return None
 
 
-async def async_ipc_interface(IPC_FIFO_NAME):
+async def async_ipc_interface(process, IPC_FIFO_NAME):
     try:
         os.mkfifo(IPC_FIFO_NAME)
         time.sleep(1)
@@ -56,7 +71,7 @@ async def async_ipc_interface(IPC_FIFO_NAME):
             pass
         else:
             assert False, f"Error {os.errno}"
-    output = reader(IPC_FIFO_NAME, time.time())
+    output = await reader_for_async(process, IPC_FIFO_NAME)
     if output is None:
         return None
     json_values = ast.literal_eval(output)
@@ -83,7 +98,7 @@ def ipc_interface(IPC_FIFO_NAME):
 
 async def main(process, IPC_FIFO_NAME):
     output = await asyncio.gather(async_is_processrunning(process),
-                                  async_ipc_interface(IPC_FIFO_NAME))
+                                  async_ipc_interface(process, IPC_FIFO_NAME))
     return output
 
 
